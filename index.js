@@ -87,6 +87,8 @@ const React = {
         container.innerHTML = markup
     },
     // 返回一个 ReactElement 实例
+    // 即一个包含 type、key、props属性的对象
+    // React.render 来根据不同的 type，调用对应的 ReactDOMConponent 来渲染
     createElement(tag, config, children) {
         const key = config.key || null
         const props = {}
@@ -109,7 +111,6 @@ const React = {
     },
 }
 
-
 const element = React.createElement('div', {
     id: 'test',
     onclick() {
@@ -117,7 +118,7 @@ const element = React.createElement('div', {
     }
 }, 'click me')
 
-
+console.log(element)
 window.onload = function() {
     React.render(element, document.getElementById("container"))
 }
