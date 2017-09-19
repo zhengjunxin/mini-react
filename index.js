@@ -27,7 +27,7 @@ class ReactElement {
     }
 }
 
-class ReactDOMConponent {
+class ReactDOMComponent {
     constructor(element) {
         this._currentElement = element
         this._rootNodeID = null
@@ -197,7 +197,7 @@ function instaniateReactComponent(node) {
         return new ReactDomTextComponent(node)
     }
     else if (type === 'object' && typeof node.type === 'string') {
-        return new ReactDOMConponent(node)
+        return new ReactDOMComponent(node)
     }
     else if (type === 'object' && typeof node.type === 'function') {
         return new ReactCompositeComponent(node)
