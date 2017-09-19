@@ -98,6 +98,7 @@ class ReactCompositeComponent {
             inst.componentWillMount()
         }
 
+        // render 方法还是返回 ReactElement
         const renderedElement = inst.render()
 
         const renderedComponentInstanece = this._renderedComponent = instaniateReactComponent(renderedElement)
@@ -112,6 +113,7 @@ class ReactCompositeComponent {
     }
 }
 
+// 处理 ReactElement 的渲染方式
 function instaniateReactComponent(node) {
     const type = typeof node
     if (type === 'string' || type === 'number') {
@@ -124,6 +126,7 @@ function instaniateReactComponent(node) {
         return new ReactCompositeComponent(node)
     }
 }
+
 let didMount = null
 const React = {
     nextReactRootIndex: 0,
@@ -200,8 +203,20 @@ const element = React.createElement(Hello, {
     name: 'joe'
 })
 
-console.log(Hello, element)
-
 window.onload = function () {
     React.render(element, document.getElementById("container"))
 }
+
+// 1、渲染普通文本
+// React.render('hello', container)
+// 调用 instaniateReactComponent，调用 ReactDomTextComponent 返回 <span>hello</span>
+
+// 2、渲染 DOM 节点
+// const element = {type: 'div', props: {id: '#test', children: ['hello world']}}
+// React.render(element, container)
+// 调用 instaniateReactComponent，调用 ReactDOMComponent，返回 <div {...props}>{React.createElement(children)}</div>
+
+// 3、渲染 Component
+// const element = {componentWillMount(){}, render() => ReactElement}
+// 调用 instaniateReactComponent，调用 ReactCompositeComponent 返回 render 里的 ReactElement
+// Component 只是多了声明周期而已
