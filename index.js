@@ -8,6 +8,7 @@ class ReactDomTextComponent {
         this._rootNodeID = rootID
         return `<span data-reactid=${rootID}>${this._currentElement}</span>`
     }
+    // 文本的更新是直接更新
     receiveComponent(nextText) {
         const nextStringText = `${nextText}`
 
@@ -146,6 +147,7 @@ class ReactCompositeComponent {
 
         return markup
     }
+    // 调用生命后期，判断是否需要更新，如果需要更新则调用对应实例的 receiveComponent 方法
     receiveComponent(nextElement, newState) {
         this._currentElement = nextElement || this._currentElement
 
