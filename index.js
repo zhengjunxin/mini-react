@@ -37,7 +37,7 @@ class ReactDOMConponent {
         let tagClose = `</${type}>`
 
         for (let propKey in props) {
-            // 是事件
+            // 事件绑定在 document
             if (/^on.+/.test(propKey)) {
                 const eventType = propKey.replace('on', '').toLowerCase()
                 document.addEventListener(eventType, props[propKey])
@@ -69,6 +69,49 @@ class ReactDOMConponent {
     }
 }
 
+class ReactClass {
+    render() {
+
+    }
+}
+
+class ReactCompositeComponent {
+    constructor(element) {
+        //存放元素element对象
+        this._currentElement = element;
+        //存放唯一标识
+        this._rootNodeID = null;
+        //存放对应的ReactClass的实例
+        this._instance = null;
+    }
+    mountComponent(rootID) {
+        this._rootNodeID = rootID
+
+        const { props: publicProps, type: ReactClass } = this._currentElement
+
+        // 这里似乎是 ReactClass 继承 spec 了
+        const inst = this._instance = new ReactClass(publicProps)
+
+        inst._reactInternalInstance = this
+
+        if (inst.componentWillMount) {
+            inst.componentWillMount()
+        }
+
+        const renderedElement = inst.render()
+
+        const renderedComponentInstanece = this._renderedComponent = instaniateReactComponent(renderedElement)
+
+        const markup = renderedComponentInstanece.mountComponent(rootID)
+
+        didMount = function() {
+            inst.componentDidMount && inst.componentDidMount()
+        }
+
+        return markup
+    }
+}
+
 function instaniateReactComponent(node) {
     const type = typeof node
     if (type === 'string' || type === 'number') {
@@ -77,19 +120,27 @@ function instaniateReactComponent(node) {
     else if (type === 'object' && typeof node.type === 'string') {
         return new ReactDOMConponent(node)
     }
+    else if (type === 'object' && typeof node.type === 'function') {
+        return new ReactCompositeComponent(node)
+    }
 }
-
+let didMount = null
 const React = {
     nextReactRootIndex: 0,
     render(element, container) {
         const instance = instaniateReactComponent(element)
         const markup = instance.mountComponent(this.nextReactRootIndex)
         container.innerHTML = markup
+
+        if (didMount) {
+            didMount()
+        }
     },
     // 返回一个 ReactElement 实例
     // 即一个包含 type、key、props属性的对象
     // React.render 来根据不同的 type，调用对应的 ReactDOMConponent 来渲染
     createElement(tag, config, children) {
+        config = config || {}
         const key = config.key || null
         const props = {}
 
@@ -98,7 +149,6 @@ const React = {
                 props[key] = config[key]
             }
         })
-
         const childrenLength = arguments.length - 2
         if (childrenLength === 1) {
             props.children = Array.isArray(children) ? children : [children]
@@ -109,16 +159,49 @@ const React = {
 
         return new ReactElement(tag, key, props)
     },
+    createClass(spec) {
+        class ReactChild extends ReactClass {
+            constructor(props) {
+                super(props)
+                this.props = props
+                this.state = this.getInitialState ? this.getInitialState() : null
+            }
+        }
+        Object.assign(ReactChild.prototype, spec)
+
+        // ReactChild 和 spec 的继承关系是？
+        return ReactChild
+    }
 }
 
-const element = React.createElement('div', {
-    id: 'test',
-    onclick() {
-        console.log('hello')
-    }
-}, 'click me')
 
-console.log(element)
-window.onload = function() {
+const Hello = React.createClass({
+    getInitialState() {
+        return {
+            type: 'say:'
+        }
+    },
+    componentWillMount() {
+        console.log('will Mount')
+    },
+    componentDidMount() {
+        console.log('did Mount')
+    },
+    render() {
+        return React.createElement(
+            'div',
+            null,
+            this.state.type, 'hello ', this.props.name
+        )
+    }
+})
+
+const element = React.createElement(Hello, {
+    name: 'joe'
+})
+
+console.log(Hello, element)
+
+window.onload = function () {
     React.render(element, document.getElementById("container"))
 }
