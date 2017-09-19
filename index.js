@@ -105,9 +105,9 @@ class ReactCompositeComponent {
 
         const markup = renderedComponentInstanece.mountComponent(rootID)
 
-        didMount = function() {
+        didMount.push(() => {
             inst.componentDidMount && inst.componentDidMount()
-        }
+        })
 
         return markup
     }
@@ -127,7 +127,7 @@ function instaniateReactComponent(node) {
     }
 }
 
-let didMount = null
+let didMount = []
 const React = {
     nextReactRootIndex: 0,
     render(element, container) {
@@ -135,9 +135,9 @@ const React = {
         const markup = instance.mountComponent(this.nextReactRootIndex)
         container.innerHTML = markup
 
-        if (didMount) {
-            didMount()
-        }
+        didMount.forEach(component => {
+            component()
+        })
     },
     // 返回一个 ReactElement 实例
     // 即一个包含 type、key、props属性的对象
@@ -220,3 +220,5 @@ window.onload = function () {
 // const element = {componentWillMount(){}, render() => ReactElement}
 // 调用 instaniateReactComponent，调用 ReactCompositeComponent 返回 render 里的 ReactElement
 // Component 只是多了声明周期而已
+
+// ReactDomTextComponent、ReactDOMComponent、ReactCompositeComponent 的 mountComponenet 定义返回什么 markup
