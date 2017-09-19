@@ -1,3 +1,72 @@
+//全局的更新深度标识
+var updateDepth = 0;
+//全局的更新队列，所有的差异都存在这里
+var diffQueue = [];
+
+var UPATE_TYPES = {
+    MOVE_EXISTING: 1,
+    REMOVE_NODE: 2,
+    INSERT_MARKUP: 3
+}
+
+function genDiffElement(rootID, type, fromIndex, toIndex, markup) {
+    return {
+        parentID: rootID,
+        parentNode: getNodeById(rootID),
+        type,
+        fromIndex,
+        toIndex,
+        markup,
+    }
+}
+
+function insertChildAt(parentNode, childNode, index) {
+    var beforeChild = parentNode.children().get(index);
+    beforeChild ? childNode.insertBefore(beforeChild) : childNode.appendTo(parentNode);
+}
+
+function flattenChildren(children) {
+    const childrenMap = {}
+    for (let i = 0; i < children.length; i++) {
+        const child = children[i]
+        // 如果 elment 有 key，则取 key，否则取数组的 index
+        const name = child && child._currentElement && child._currentElement.key ? child._currentElement.key : i.toString(36)
+        childrenMap[name] = child
+    }
+    return childrenMap
+}
+
+function getNodeById(rootID) {
+    return $(`[data-reactid="${rootID}"]`)
+}
+
+function generateComponentChildren(preChildren, nextChildrenElements = []) {
+    const nextChildren = {}
+
+    nextChildrenElements.forEach((element, index) => {
+        const name = element.key ? element.key : index
+        const preChild = preChildren && preChildren[name]
+        const preElement = preChild & preChild._currentElement
+        const nextElement = element
+
+
+        if (_shouldUpdateReactComponent(preElement, nextElement)) {
+            // 如果只需要更新，则复用之前的 child
+
+            preChild.receiveComponent(nextElement)
+            nextChildren[name] = preChild
+        }
+        else {
+            // 不能更新，则重新生成一个 component
+
+            const nextChildInstance = instantiateReactComponent(nextElement)
+            nextChildren[name] = nextChildInstance
+        }
+    })
+
+    return nextChildren
+}
+
 // component类负责具体的渲染、更新、删除逻辑
 class ReactDomTextComponent {
     constructor(text) {
@@ -61,7 +130,7 @@ class ReactDOMComponent {
         const childrenInstances = []
         children.forEach((child, index) => {
             // 递归是个好东西
-            const childComponentInstance = instaniateReactComponent(child)
+            const childComponentInstance = instantiateReactComponent(child)
             childrenInstances._mountIndex = index
 
             childrenInstances.push(childComponentInstance)
@@ -72,9 +141,147 @@ class ReactDOMComponent {
             content += childMarkup
         })
 
+        // 储存子节点，更新时要用
         this._renderedChildren = childrenInstances
 
         return `${tagOpen}>${content}${tagClose}`
+    }
+    receiveComponent(nextElement) {
+        const lastProps = this._currentElement.props
+        const nextProps = nextElement.props
+
+        this._currentElement = nextElement
+
+        this._updateDOMProperties(lastProps, nextProps)
+
+        this._updateDOMChildren(nextElement.props.children)
+    }
+    _updateDOMProperties(lastProps, nextProps) {
+        // 旧属性而新属性没的，需要删除
+        for (let propKey in lastProps) {
+            if (!nextProps[propKey]) {
+                // 事件需要解绑
+                if (/^on.+/.test(propKey)) {
+                    const eventType = propKey.replace('on', '').toLowerCase()
+                    document.removeEventListener(eventType, lastProps[propKey])
+                }
+            }
+            // 属性需要删除
+            else if (propKey !== 'children') {
+                document.querySelector(`[data-reactid="${this._rootNodeID}"]`).removeAttribute(propKey)
+            }
+        }
+
+        // 新属性需要增加
+        for (let propKey in nextProps) {
+            if (/^on.+/.test(propKey)) {
+                const eventType = propKey.replace('on', '').toLowerCase()
+                document.addEventListener(eventType, nextProps[propKey])
+            }
+            else if (propKey !== 'children') {
+                document.querySelector(`[data-reactid="${this._rootNodeID}"]`).setAttribute(propKey, nextProps[propKey])
+            }
+        }
+    }
+    _updateDOMChildren(nextChildrenElements) {
+        updateDepth++
+        this._diff(diffQueue, nextChildrenElements)
+        updateDepth--
+
+        if (updateDepth === 0) {
+            this._patch(diffQueue)
+            diffQueue = []
+        }
+    }
+    _diff(diffQueue, nextChildrenElements) {
+        const preChildren = flattenChildren(this._renderedChildren)
+        // 在这里生成子节点比较的！！！
+        const nextChildren = generateComponentChildren(preChildren, nextChildrenElements)
+
+        this._renderedChildren = []
+
+        Object.keys(nextChildren).forEach(key => {
+            const instance = nextChildren[key]
+            this._renderedChildren.push(instance)
+        })
+
+        let nextIndex = 0
+
+        // 需要新增的差异
+        for (let name in nextChildren) {
+            if (nextChildren.hasOwnProperty(name)) {
+                const preChild = preChildren && preChildren[name]
+                const nextChild = nextChildren[name]
+
+                // 同一个 component，只需移动
+                if (preChild === nextChild) {
+                    diffQueue.push(genDiffElement(this._rootNodeID, UPATE_TYPES.MOVE_EXISTING, preChild._mountIndex, nextIndex))
+                }
+                else {
+                    // 不一样，如果老的还存在，则需要删除
+                    if (preChild) {
+                        diffQueue.push(genDiffElement(this._rootNodeID, UPATE_TYPES.REMOVE_NODE, preChild._mountIndex, null))
+                    }
+
+                    diffQueue.push(genDiffElement(this._rootNodeID, UPATE_TYPES.INSERT_MARKUP, null, nextIndex, nextChild.mountComponent()))
+                }
+                // @todo 为什么要更新 mount 的 index
+                nextChild._mountIndex = nextIndex
+                nextIndex++
+            }
+        }
+
+        // 需要移除的差异
+        for (let name in preChildren) {
+            if (preChildren.hasOwnProperty(name) && !(nextChildren && nextChildren.hasOwnProperty(name))) {
+                diffQueue.push(genDiffElement(this._rootNodeID, UPATE_TYPES.REMOVE_NODE, preChildren._mountIndex, null))
+            }
+        }
+    }
+    _patch(updates) {
+        var update;
+        var initialChildren = {};
+        var deleteChildren = [];
+        for (var i = 0; i < updates.length; i++) {
+            update = updates[i];
+            if (update.type === UPATE_TYPES.MOVE_EXISTING || update.type === UPATE_TYPES.REMOVE_NODE) {
+                var updatedIndex = update.fromIndex;
+                var updatedChild = $(update.parentNode.children().get(updatedIndex));
+                var parentID = update.parentID;
+
+                //所有需要更新的节点都保存下来，方便后面使用
+                initialChildren[parentID] = initialChildren[parentID] || [];
+                //使用parentID作为简易命名空间
+                initialChildren[parentID][updatedIndex] = updatedChild;
+
+
+                //所有需要修改的节点先删除,对于move的，后面再重新插入到正确的位置即可
+                deleteChildren.push(updatedChild)
+            }
+
+        }
+
+        //删除所有需要先删除的
+        $.each(deleteChildren, function (index, child) {
+            $(child).remove();
+        })
+
+
+        //再遍历一次，这次处理新增的节点，还有修改的节点这里也要重新插入
+        for (var k = 0; k < updates.length; k++) {
+            update = updates[k];
+            switch (update.type) {
+                case UPATE_TYPES.INSERT_MARKUP:
+                    insertChildAt(update.parentNode, $(update.markup), update.toIndex);
+                    break;
+                case UPATE_TYPES.MOVE_EXISTING:
+                    insertChildAt(update.parentNode, initialChildren[update.parentID][update.fromIndex], update.toIndex);
+                    break;
+                case UPATE_TYPES.REMOVE_NODE:
+                    // 什么都不需要做，因为上面已经帮忙删除掉了
+                    break;
+            }
+        }
     }
 }
 
@@ -137,7 +344,7 @@ class ReactCompositeComponent {
         // render 方法还是返回 ReactElement
         const renderedElement = inst.render()
 
-        const renderedComponentInstanece = this._renderedComponent = instaniateReactComponent(renderedElement)
+        const renderedComponentInstanece = this._renderedComponent = instantiateReactComponent(renderedElement)
 
         const markup = renderedComponentInstanece.mountComponent(rootID)
 
@@ -182,16 +389,16 @@ class ReactCompositeComponent {
         // 不行则重新渲染
         else {
             const thisID = this._rootNodeID
-            const _renderedComponent = this._renderedComponent = instaniateReactComponent(nextRenderedElement)
+            const _renderedComponent = this._renderedComponent = instantiateReactComponent(nextRenderedElement)
             const nextMarkup = _renderedComponent.mountComponent(thisID)
-            
+
             // document.querySelector(`[data-reactid="${this._rootNodeID}"]`).innerHTML = nextMarkup
         }
     }
 }
 
 // 处理 ReactElement 的渲染方式
-function instaniateReactComponent(node) {
+function instantiateReactComponent(node) {
     const type = typeof node
     if (type === 'string' || type === 'number') {
         return new ReactDomTextComponent(node)
@@ -209,7 +416,7 @@ const React = {
     nextReactRootIndex: 0,
     render(element, container) {
         // 实例化对应的组件类的实例
-        const instance = instaniateReactComponent(element)
+        const instance = instantiateReactComponent(element)
         // 返回对应的 markup
         const markup = instance.mountComponent(this.nextReactRootIndex)
         container.innerHTML = markup
@@ -275,11 +482,10 @@ const Hello = React.createClass({
         }, 100)
     },
     render() {
-        return this.state.type
         return React.createElement(
             'div',
             null,
-            this.state.type//, 'hello ', this.props.name
+            this.state.type, 'hello ', this.props.name
         )
     }
 })
