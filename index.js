@@ -8,6 +8,14 @@ class ReactDomTextComponent {
         this._rootNodeID = rootID
         return `<span data-reactid=${rootID}>${this._currentElement}</span>`
     }
+    receiveComponent(nextText) {
+        const nextStringText = `${nextText}`
+
+        if (nextStringText !== this._currentElement) {
+            this._currentElement = nextStringText
+            document.querySelector(`[data-reactid="${this._rootNodeID}"]`).innerHTML = this._currentElement
+        }
+    }
 }
 
 class ReactElement {
@@ -73,6 +81,32 @@ class ReactClass {
     render() {
 
     }
+    setState(newState) {
+        this._reactInternalInstance.receiveComponent(null, newState)
+    }
+}
+
+// 看看是否可以通过更新解决问题
+function _shouldUpdateReactComponent(preElement, nextElement) {
+    if (preElement != null && nextElement != null) {
+        const preType = typeof preElement
+        const nextType = typeof nextElement
+
+        // 都是数字、字符，可以通过更新解决问题
+        if (preType === 'string' || preType === 'number') {
+            return nextType === 'string' || nextType === 'number'
+        }
+        else {
+            // 是同一类 Component，可以通过更新解决问题
+            return nextType === 'object' &&
+                preElement.type === nextElement.type &&
+                preElement.key === nextElement.key
+        }
+    }
+    else {
+        // 有一个直接没有了，这个时候不是更新能解决问题的了
+        return false
+    }
 }
 
 class ReactCompositeComponent {
@@ -84,6 +118,7 @@ class ReactCompositeComponent {
         //存放对应的ReactClass的实例
         this._instance = null;
     }
+    // mountComponent 方法*都是*负责返回 markup 的
     mountComponent(rootID) {
         this._rootNodeID = rootID
 
@@ -111,6 +146,46 @@ class ReactCompositeComponent {
 
         return markup
     }
+    receiveComponent(nextElement, newState) {
+        this._currentElement = nextElement || this._currentElement
+
+        const inst = this._instance
+
+        const nextState = Object.assign({}, inst.state, newState)
+        const nextProps = this._currentElement.props
+
+        inst.state = nextState
+
+        if (inst.shouldComponentUpdate && inst.shouldComponentUpdate(nextProps, nextState) === false) {
+            return
+        }
+
+        if (inst.componentWillUpdate) {
+            inst.componentWillUpdate(nextProps, nextState)
+        }
+
+        var prevComponentInstance = this._renderedComponent;
+        var prevRenderedElement = prevComponentInstance._currentElement;
+        //重新执行render拿到对应的新element;
+        var nextRenderedElement = this._instance.render();
+
+        // 可以更新解决，则更新
+        if (_shouldUpdateReactComponent(prevRenderedElement, nextRenderedElement)) {
+            // 传入 nextElement 来更新
+            // @todo 为什么这里的 ReactDOMConponent 的实例？
+            // 因为 ReactClass 里还是用的 React.createElement
+            prevComponentInstance.receiveComponent(nextRenderedElement)
+            inst.componentUpdate && inst.componentUpdate()
+        }
+        // 不行则重新渲染
+        else {
+            const thisID = this._rootNodeID
+            const _renderedComponent = this._renderedComponent = instaniateReactComponent(nextRenderedElement)
+            const nextMarkup = _renderedComponent.mountComponent(thisID)
+            
+            // document.querySelector(`[data-reactid="${this._rootNodeID}"]`).innerHTML = nextMarkup
+        }
+    }
 }
 
 // 处理 ReactElement 的渲染方式
@@ -131,7 +206,9 @@ let didMount = []
 const React = {
     nextReactRootIndex: 0,
     render(element, container) {
+        // 实例化对应的组件类的实例
         const instance = instaniateReactComponent(element)
+        // 返回对应的 markup
         const markup = instance.mountComponent(this.nextReactRootIndex)
         container.innerHTML = markup
 
@@ -189,12 +266,18 @@ const Hello = React.createClass({
     },
     componentDidMount() {
         console.log('did Mount')
+        setTimeout(() => {
+            this.setState({
+                type: 'joe'
+            })
+        }, 100)
     },
     render() {
+        return this.state.type
         return React.createElement(
             'div',
             null,
-            this.state.type, 'hello ', this.props.name
+            this.state.type//, 'hello ', this.props.name
         )
     }
 })
