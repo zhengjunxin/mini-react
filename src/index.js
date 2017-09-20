@@ -477,7 +477,7 @@ const Hello = React.createClass({
         console.log('did Mount')
         setTimeout(() => {
             this.setState({
-                type: 'joe'
+                type: 'shout: '
             })
         }, 100)
     },
