@@ -67,6 +67,8 @@ function generateComponentChildren(preChildren, nextChildrenElements = []) {
     return nextChildren
 }
 
+
+
 // component类负责具体的渲染、更新、删除逻辑
 class ReactDomTextComponent {
     constructor(text) {
@@ -111,7 +113,7 @@ class ReactDOMComponent {
 
         const { type, key, props } = this._currentElement
 
-        let tagOpen = `<${type}`
+        let tagOpen = `<${type} data-reactid=${rootID}`
         let tagClose = `</${type}>`
 
         for (let propKey in props) {
@@ -157,7 +159,7 @@ class ReactDOMComponent {
         this._updateDOMChildren(nextElement.props.children)
     }
     _updateDOMProperties(lastProps, nextProps) {
-        // 旧属性而新属性没的，需要删除
+        // 旧属性有而新属性没的，需要删除
         for (let propKey in lastProps) {
             if (!nextProps[propKey]) {
                 // 事件需要解绑
@@ -165,10 +167,10 @@ class ReactDOMComponent {
                     const eventType = propKey.replace('on', '').toLowerCase()
                     document.removeEventListener(eventType, lastProps[propKey])
                 }
-            }
-            // 属性需要删除
-            else if (propKey !== 'children') {
-                document.querySelector(`[data-reactid="${this._rootNodeID}"]`).removeAttribute(propKey)
+                // 属性需要删除
+                else if (propKey !== 'children') {
+                    document.querySelector(`[data-reactid="${this._rootNodeID}"]`).removeAttribute(propKey)
+                }
             }
         }
 
@@ -244,6 +246,7 @@ class ReactDOMComponent {
         var deleteChildren = [];
         for (var i = 0; i < updates.length; i++) {
             update = updates[i];
+            // 要移动、删除的都先删除
             if (update.type === UPATE_TYPES.MOVE_EXISTING || update.type === UPATE_TYPES.REMOVE_NODE) {
                 var updatedIndex = update.fromIndex;
                 var updatedChild = $(update.parentNode.children().get(updatedIndex));
@@ -266,8 +269,7 @@ class ReactDOMComponent {
             $(child).remove();
         })
 
-
-        //再遍历一次，这次处理新增的节点，还有修改的节点这里也要重新插入
+        // 插入移动的和新增的节点
         for (var k = 0; k < updates.length; k++) {
             update = updates[k];
             switch (update.type) {
@@ -286,6 +288,10 @@ class ReactDOMComponent {
 }
 
 class ReactClass {
+    constructor(props) {
+        this.props = props
+        this.state = this.getInitialState ? this.getInitialState() : null
+    }
     render() {
 
     }
@@ -392,7 +398,7 @@ class ReactCompositeComponent {
             const _renderedComponent = this._renderedComponent = instantiateReactComponent(nextRenderedElement)
             const nextMarkup = _renderedComponent.mountComponent(thisID)
 
-            // document.querySelector(`[data-reactid="${this._rootNodeID}"]`).innerHTML = nextMarkup
+            document.querySelector(`[data-reactid="${this._rootNodeID}"]`).outerHTML = nextMarkup
         }
     }
 }
@@ -418,7 +424,7 @@ const React = {
         // 实例化对应的组件类的实例
         const instance = instantiateReactComponent(element)
         // 返回对应的 markup
-        const markup = instance.mountComponent(this.nextReactRootIndex)
+        const markup = instance.mountComponent(this.nextReactRootIndex++)
         container.innerHTML = markup
 
         didMount.forEach(component => {
@@ -449,20 +455,11 @@ const React = {
         return new ReactElement(tag, key, props)
     },
     createClass(spec) {
-        class ReactChild extends ReactClass {
-            constructor(props) {
-                super(props)
-                this.props = props
-                this.state = this.getInitialState ? this.getInitialState() : null
-            }
-        }
-        Object.assign(ReactChild.prototype, spec)
+        Object.assign(ReactClass.prototype, spec)
 
-        // ReactChild 和 spec 的继承关系是？
-        return ReactChild
+        return ReactClass
     }
 }
-
 
 const Hello = React.createClass({
     getInitialState() {
@@ -482,8 +479,15 @@ const Hello = React.createClass({
         }, 100)
     },
     render() {
+        if (this.state.type === 'shout: ') {
+            return React.createElement(
+                'div',
+                null,
+                this.state.type, 'hello ', this.props.name
+            )
+        }
         return React.createElement(
-            'div',
+            'span',
             null,
             this.state.type, 'hello ', this.props.name
         )
@@ -497,19 +501,3 @@ const element = React.createElement(Hello, {
 window.onload = function () {
     React.render(element, document.getElementById("container"))
 }
-
-// 1、渲染普通文本
-// React.render('hello', container)
-// 调用 instaniateReactComponent，调用 ReactDomTextComponent 返回 <span>hello</span>
-
-// 2、渲染 DOM 节点
-// const element = {type: 'div', props: {id: '#test', children: ['hello world']}}
-// React.render(element, container)
-// 调用 instaniateReactComponent，调用 ReactDOMComponent，返回 <div {...props}>{React.createElement(children)}</div>
-
-// 3、渲染 Component
-// const element = {componentWillMount(){}, render() => ReactElement}
-// 调用 instaniateReactComponent，调用 ReactCompositeComponent 返回 render 里的 ReactElement
-// Component 只是多了声明周期而已
-
-// ReactDomTextComponent、ReactDOMComponent、ReactCompositeComponent 的 mountComponenet 定义返回什么 markup
